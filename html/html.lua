@@ -1,4 +1,24 @@
 -- $Id: html.lua,v 1.2 2007-05-12 04:37:20 tclua Exp $
+--
+-- * Usage
+--
+-- Parsing file:
+--
+-- require "html"
+-- html.parse(io.stdin)
+--
+-- Parsing string:
+--
+-- require "html"
+-- html.parsestr("<html></html>")
+--
+--
+-- * Author
+--
+-- T. Kobayashi
+-- ether @nospam@ users.sourceforge.jp 
+--
+--
 
 module(..., package.seeall)
 
@@ -267,6 +287,13 @@ function Tag (s)
     {type = "Start", value = s}
 end
 
+-- <!DOCTYPE ...> 
+-- <!-- .... -->
+-- <?xml .... > buggy html
+function SpecialTreat (s)
+  return {type = "SpecialTreat", value = s} 
+end
+
 function Text (s)
   local unescaped = unescape(s) 
   return {type = "Text", value = unescaped} 
@@ -278,7 +305,18 @@ function text (f, buf)
   if c == "<" then
     if buf:content() ~= "" then coroutine.yield(Text(buf:content())) end
     buf:set(c)
-    return tag(f, buf)
+    ------Edited---------
+    c = f:read(1)
+    if c == '!' or c == '?' then
+      buf:append(c) 
+      return specialTreat(f, buf)
+    elseif c then
+      buf:append(c) 
+      return tag(f, buf)
+    else
+      if buf:content() ~= "" then coroutine.yield(Text(buf:content())) end
+    end
+    ------Edited---------
   elseif c then
     buf:append(c)
     return text(f, buf)
@@ -287,11 +325,70 @@ function text (f, buf)
   end
 end
 
+------Edited---------
+function specialTreat(f, buf)
+    local c = f:read(1)
+    if c == ">" then 
+      buf:append(c) 
+      if string.match(buf:content(), "^<!%-%-.*%-%->$") or
+         string.match(buf:content(), "^<%?.+>$") or
+         string.match(buf:content(), "^<!DOCTYPE%s+HTML[^>]+>$")
+       then
+        coroutine.yield(SpecialTreat(buf:content()))
+        buf:clear()
+        return text(f, buf)
+      else
+        return specialTreat(f, buf)
+      end
+    elseif c then
+      buf:append(c)
+      return specialTreat(f, buf)
+    else
+      if buf:content() ~= "" then coroutine.yield(SpecialTreat(buf:content())) end
+    end
+end
+
+function fullQuotedStr(f, q)
+    local qStr = q
+    local c
+    repeat 
+        c = f:read(1)
+        if c then
+            qStr = qStr .. c
+        end
+    until (not c or (c == q))
+    if not c then qStr = qStr .. q end
+    return qStr, c
+end
+------Edited---------
+
 -- lexer: tag mode
 function tag (f, buf)
   local c = f:read(1)
-  if c == ">" then
-    coroutine.yield(Tag(buf:append(c):content()))
+  ------Edited---------
+  if c == "'" or c == '"' then
+      local qStr, QSymbol = fullQuotedStr(f, c)
+      buf:append(qStr)
+      if QSymbol ~= c then
+        if buf:content() ~= "" then coroutine.yield(Tag(buf:content())) end
+      else
+        return tag(f, buf)
+      end
+  elseif c == "<" then 
+    coroutine.yield(Text(buf:content()))
+    buf:clear()
+    buf:append(c)
+    return tag(f, buf)
+  elseif c == ">" then 
+    buf:append(c)
+    local tagBuf = buf:content()
+    if not string.find(tagBuf, "^</?%s*%w*") then
+        -- some buggy html file
+        coroutine.yield(Text(buf:content()))
+    else
+        coroutine.yield(Tag(buf:content()))
+    end
+  ------Edited---------
     buf:clear()
     return text(f, buf)
   elseif c then
@@ -302,19 +399,26 @@ function tag (f, buf)
   end
 end
 
+-- 
 function parse_starttag(tag)
-  local tagname = string.match(tag, "<%s*(%w+)")
+  local tagname = string.match(tag, "<%s*([^>%s]+)")
   local elem = {_attr = {}}
   elem._tag = tagname
+  -- buggy: <a alt=something ...> attributes with no quotation marks 
   for key, _, val in string.gmatch(tag, "(%w+)%s*=%s*([\"'])(.-)%2", i) do
     local unescaped = unescape(val)
     elem._attr[key] = unescaped
   end
+  for key, val in string.gmatch(tag, "(%w+)%s*=%s*([^\"'%s]+)[%s>]", i) do
+    local unescaped = unescape(val)
+    elem._attr[key] = unescaped
+  end
+
   return elem
 end
 
 function parse_endtag(tag)
-  local tagname = string.match(tag, "<%s*/%s*(%w+)")
+  local tagname = string.match(tag, "<%s*/%s*([^>%s]+)")
   return tagname
 end
 
@@ -363,7 +467,7 @@ end
 
 -- tree builder
 function parse(f)
-  local root = {_tag = "#document", _attr = {}}
+  local root = {_tag = "#document", _st = true, _stText = "", _attr = {}} -- _st = special treat
   local stack = {root}
   for i in makeiter(function () return text(f, newbuf()) end) do
     if i.type == "Start" then
@@ -398,6 +502,9 @@ function parse(f)
           table.remove(stack, j)
         end
       end
+    elseif i.type == "SpecialTreat" then -- For: <!--.*--> or <!DOCTYPE ...>
+      local top = stack[#stack]
+      top[#top+1] = {_st = true, _stText = i.value}
     else -- Text
       local top = stack[#stack]
       top[#top+1] = i.value

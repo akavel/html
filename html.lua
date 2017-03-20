@@ -1,28 +1,24 @@
--- $Id: html.lua,v 1.2 2007-05-12 04:37:20 tclua Exp $
---
 -- * Usage
 --
 -- Parsing file:
 --
--- require "html"
--- html.parse(io.stdin)
+--  local html = require "html"
+--  html.parse(io.stdin)
 --
 -- Parsing string:
 --
--- require "html"
--- html.parsestr("<html></html>")
+--  local html = require "html"
+--  html.parsestr("<html></html>")
 --
 --
 -- * Author
 --
 -- T. Kobayashi
--- ether @nospam@ users.sourceforge.jp 
+-- ether @nospam@ users.sourceforge.jp
 --
 --
 
-module(..., package.seeall)
-
-entity = {
+local entity = {
   nbsp = " ",
   lt = "<",
   gt = ">",
@@ -37,7 +33,7 @@ setmetatable(entity, {
   end
 })
 
-block = {
+local block = {
   "address",
   "blockquote",
   "center",
@@ -54,7 +50,7 @@ block = {
   "ul",
 }
 
-inline = {
+local inline = {
   "a", "abbr", "acronym", "applet",
   "b", "basefont", "bdo", "big", "br", "button",
   "cite", "code",
@@ -73,7 +69,7 @@ inline = {
   "var",
 }
 
-tags = {
+local tags = {
   a = { empty = false },
   abbr = {empty = false} ,
   acronym = {empty = false} ,
@@ -249,7 +245,7 @@ setmetatable(tags, {
 })
 
 -- string buffer implementation
-function newbuf ()
+local function newbuf ()
   local buf = {
     _buf = {},
     clear =   function (self) self._buf = {}; return self end,
@@ -264,7 +260,7 @@ function newbuf ()
 end
 
 -- unescape character entities
-function unescape (s)
+local function unescape (s)
   function entity2string (e)
     return entity[e]
   end
@@ -272,7 +268,7 @@ function unescape (s)
 end
 
 -- iterator factory
-function makeiter (f)
+local function makeiter (f)
   local co = coroutine.create(f)
   return function ()
     local code, res = coroutine.resume(co)
@@ -281,7 +277,7 @@ function makeiter (f)
 end
 
 -- constructors for token
-function Tag (s) 
+local function Tag (s) 
   return string.find(s, "^</") and
     {type = "End",   value = s} or
     {type = "Start", value = s}
@@ -290,17 +286,17 @@ end
 -- <!DOCTYPE ...> 
 -- <!-- .... -->
 -- <?xml .... > buggy html
-function SpecialTreat (s)
+local function SpecialTreat (s)
   return {type = "SpecialTreat", value = s} 
 end
 
-function Text (s)
+local function Text (s)
   local unescaped = unescape(s) 
   return {type = "Text", value = unescaped} 
 end
 
 -- lexer: text mode
-function text (f, buf)
+local function text (f, buf)
   local c = f:read(1)
   if c == "<" then
     if buf:content() ~= "" then coroutine.yield(Text(buf:content())) end
@@ -326,7 +322,7 @@ function text (f, buf)
 end
 
 ------Edited---------
-function specialTreat(f, buf)
+local function specialTreat(f, buf)
     local c = f:read(1)
     if c == ">" then 
       buf:append(c) 
@@ -348,7 +344,7 @@ function specialTreat(f, buf)
     end
 end
 
-function fullQuotedStr(f, q)
+local function fullQuotedStr(f, q)
     local qStr = q
     local c
     repeat 
@@ -363,7 +359,7 @@ end
 ------Edited---------
 
 -- lexer: tag mode
-function tag (f, buf)
+local function tag (f, buf)
   local c = f:read(1)
   ------Edited---------
   if c == "'" or c == '"' then
@@ -400,7 +396,7 @@ function tag (f, buf)
 end
 
 -- 
-function parse_starttag(tag)
+local function parse_starttag(tag)
   local tagname = string.match(tag, "<%s*([^>%s]+)")
   local elem = {_attr = {}}
   elem._tag = tagname
@@ -417,13 +413,13 @@ function parse_starttag(tag)
   return elem
 end
 
-function parse_endtag(tag)
+local function parse_endtag(tag)
   local tagname = string.match(tag, "<%s*/%s*([^>%s]+)")
   return tagname
 end
 
 -- find last element that satisfies given predicate
-function rfind(t, pred)
+local function rfind(t, pred)
   local length = #t
   for i=length,1,-1 do
     if pred(t[i]) then
@@ -432,7 +428,7 @@ function rfind(t, pred)
   end
 end
 
-function flatten(t, acc)
+local function flatten(t, acc)
   acc = acc or {}
   for i,v in ipairs(t) do
     if type(v) == "table" then
@@ -444,7 +440,7 @@ function flatten(t, acc)
   return acc
 end
 
-function optional_end_p(elem)
+local function optional_end_p(elem)
   if tags[elem._tag].optional_end then
     return true
   else
@@ -452,7 +448,7 @@ function optional_end_p(elem)
   end
 end
 
-function valid_child_p(child, parent)
+local function valid_child_p(child, parent)
   local schema = tags[parent._tag].child
   if not schema then return true end
 
@@ -466,7 +462,7 @@ function valid_child_p(child, parent)
 end
 
 -- tree builder
-function parse(f)
+local function parse(f)
   local root = {_tag = "#document", _st = true, _stText = "", _attr = {}} -- _st = special treat
   local stack = {root}
   for i in makeiter(function () return text(f, newbuf()) end) do
@@ -513,7 +509,7 @@ function parse(f)
   return root
 end
 
-function parsestr(s)
+local function parsestr(s)
   local handle = {
     _content = s,
     _pos = 1,
@@ -526,3 +522,9 @@ function parsestr(s)
   }
   return parse(handle)
 end
+
+return {
+	parse = parse,
+	parsestr = parsestr,
+}
+

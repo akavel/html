@@ -295,6 +295,8 @@ local function Text (s)
   return {type = "Text", value = unescaped} 
 end
 
+local tag, specialTreat
+
 -- lexer: text mode
 local function text (f, buf)
   local c = f:read(1)
@@ -322,7 +324,7 @@ local function text (f, buf)
 end
 
 ------Edited---------
-local function specialTreat(f, buf)
+function specialTreat(f, buf)
     local c = f:read(1)
     if c == ">" then 
       buf:append(c) 
@@ -359,7 +361,7 @@ end
 ------Edited---------
 
 -- lexer: tag mode
-local function tag (f, buf)
+function tag (f, buf)
   local c = f:read(1)
   ------Edited---------
   if c == "'" or c == '"' then

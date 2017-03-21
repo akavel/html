@@ -197,6 +197,7 @@ local function unescape (s)
 end
 
 -- iterator factory
+-- TODO(akavel): try replacing with coroutine.wrap if appropriate
 local function makeiter (f)
   local co = coroutine.create(f)
   return function ()
@@ -372,18 +373,14 @@ local function flatten(t, acc)
 end
 
 local function optional_end_p(elem)
-  if tags[elem._tag].optional_end then
-    return true
-  else
-    return false
-  end
+  return tags[elem._tag].optional_end
 end
 
 local function valid_child_p(child, parent)
   local schema = tags[parent._tag].child
   if not schema then return true end
 
-  for i,v in ipairs(flatten(schema)) do
+  for _,v in ipairs(flatten(schema)) do
     if v == child._tag then
       return true
     end
@@ -452,6 +449,63 @@ local function parsestr(s)
     end
   }
   return parse(handle)
+end
+
+---- DEMO/TEST ----
+if not ... then
+	local function escape(s)
+		return (('%q'):format(s):gsub('\\\n', '\\n'))
+	end
+	local function dumpt(t, output, indent)
+		indent = (indent or '') .. '  '
+		output = output or io.stdout
+		if type(t)=='table' then
+			output:write '{'
+			local max
+			for i, v in ipairs(t) do
+				max = i
+				dumpt(v, output, indent)
+				output:write ','
+			end
+			local more = false
+			for k, v in pairs(t) do
+				if type(k)~='number' or k<1 or k>max then
+					if more then
+						output:write ';'
+					end
+					more = true
+					output:write '\n'
+					output:write(indent)
+					if type(k)=='string' then
+						if k:match '^[%a_][%w_]*$' then
+							output:write(k)
+						else
+							output:write('['..escape(k)..']')
+						end
+						output:write '= '
+						dumpt(v, output, indent)
+					elseif type(k)=='number' then
+						output:write(('[%d]= '):format(k))
+						dumpt(v, output, indent)
+					else
+						error('unhandled key type: '..type(k))
+					end
+				end
+			end
+			output:write '}'
+		elseif type(t)=='string' then
+			output:write(escape(t))
+		elseif type(t)=='number' then
+			output:write(tostring(t))
+		elseif type(t)=='boolean' then
+			output:write(tostring(t))
+		end
+	end
+
+	local s = '<html><body><p>Hello<br><ul><li>world<li>other</ul><b>My<i>dear</b></i></html>'
+	print(s)
+	dumpt(parsestr(s))
+	print()
 end
 
 return {
